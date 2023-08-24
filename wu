@@ -1,0 +1,120 @@
+ public class ValidateOrderServiceImpl implements ValidateOrderService{
+ 
+ private final RMOConfigService configdata;
+
+    private final WUServiceExceptionUtils exceptionUtils;
+
+    private final MoneyOrderSaleRepo moneyOrderSaleRepo;
+
+    private final MoneyOrderRepo  moneyOrderRepo;
+
+    @Autowired
+    private RMOStatusServiceImpl rmoStatusService;
+	
+ public ValidateMoEncashmentResponse validateMoEncashment(StatusRequest validateMoEncashmentRequest) {
+        ValidateMoEncashmentResponse response = new ValidateMoEncashmentResponse();
+        RMOStatusResponse result =  rmoStatusService.returnMOStatus(validateMoEncashmentRequest);
+        response =  ValidateMoEncashmentResponse.builder()
+                .serialNumber(result.getSerialNumber())
+                .statusMessage(result.getStatusMessage())
+                .statusCode(result.getStatusCode())
+                .build();
+        return response;
+    }
+	
+
+further returnMOStatus method is have explanation in another service class like below
+public class RMOStatusServiceImpl implements RMOStatusService {
+
+  @Autowired
+  PingUtil pingUtil;
+
+  @Autowired
+  @Qualifier("defaultRestTemplate")
+  private RestTemplate defaultRestTemplate;
+
+  @Value("${ping.rmo.client.directoryId:0oa100hdJJhquui907llO}")
+  private String CLIENT_ID;
+
+  @Value("${ping.rmo.client.directorySecret:6QX5SgXLjLSC85izgEiVCBBEpwRp6dyLrMh7WNRPyhBOswGJmJyvUJuk2XIi3kiS}")
+  private String CLIENT_SECRET;
+
+  @Value("${ping.rmo.scope:post:post:pro.rmo.saleStatus}")
+  private String SCOPE;
+
+  @Value("${ping.rmo.url:https://pingfederate.dev-wu.us1.ping.cloud/as/token.oauth2}")
+  private String PING_URL;
+
+  @Value("${wu.rmo.status.apiKey:4ZTyV5HmgT23373ISYavm4jOZ8fsmNfY1BYTTXMY}")
+  private String statusAPIKey;
+
+  @Value("${wu.rmo.status.host:8a969zjonf.execute-api.us-east-1.amazonaws.com}")
+  private String statusHost;
+
+  @Value("${wu.rmo.status.URL:https://api-dev.rmo.cmt.us.cloud.wuintranet.net/rmocorsv/dev}")
+  private String CORE_API_URL;
+  @Override
+  public RMOStatusResponse returnMOStatus(StatusRequest request) throws BadRequestException, HttpServerErrorException {
+    //Generate token for getting the status
+    String token = pingUtil.getJWTBearerTokenUsingClientCredentialFlow(CLIENT_ID,CLIENT_SECRET,SCOPE,PING_URL);
+    //call to RMO Core service APIs
+    RMOStatusRequest apiRequest = new RMOStatusRequest();
+    RMOStatusResponse rmoStatusResponse = new RMOStatusResponse();
+    ResponseEntity<RMOStatusResponse> response = null;
+    try {
+
+      HttpHeaders reqHeadersSale = new HttpHeaders();
+      reqHeadersSale.setContentType(MediaType.APPLICATION_JSON);
+      reqHeadersSale.add("x-api-key", statusAPIKey);
+      reqHeadersSale.add("x-wu-externalRefId", "63463453");
+      reqHeadersSale.add("x-wu-serviceid", "rmocorsv");
+      reqHeadersSale.add("Host", statusHost);
+      reqHeadersSale.add("Authorization","Bearer "+token);
+
+      apiRequest = RMOStatusRequest.builder()
+              .rmoTerminalId("T001") //to be fetched from jwt
+              .moNumber(request.getSerialNumber())
+              .moAmount(request.getAmount())
+              .moSaleTerminalId(request.getSaleAgentId())
+              .operatorId("OP0001").build();//to be fetched from jwt
+
+      ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+      String json = ow.writeValueAsString(request);
+      log.info("The headers in status api::::::::::::::::::::"+reqHeadersSale);
+      log.info("The request json object in status ::::::   " + json);
+
+      String url = new StringBuilder(CORE_API_URL).append("/v1/pro/rmo/statusLookup").toString();
+      HttpEntity<Object> httpRequest = new HttpEntity<>(apiRequest, reqHeadersSale);
+      response = defaultRestTemplate.exchange(CORE_API_URL, HttpMethod.POST, httpRequest, RMOStatusResponse.class);
+      // notificationResponse=saleRestTemplate.postForObject(CommonConstants.Sale_Notification_URL,request,SaleNotificationResponce.class);
+      if (response.getStatusCode().is2xxSuccessful()) {
+        log.info("[RmoServiceImpl] callSaleNotificationAPi Success Response API ");
+        rmoStatusResponse = response.getBody();
+      }else{
+        log.info("The response from rest API is  ::::::"+response.getBody());
+        log.info("The response status is  ::::"+rmoStatusResponse.getStatusCode().toString());
+      }
+            return  rmoStatusResponse;
+      }
+    catch (RestClientException e) {
+      log.error("[RmoServiceImpl] [Status] exception response {}",e.getMessage());
+      log.info("The actual cause for the error is :"+e.getRootCause());
+      if(ObjectUtils.isEmpty(rmoStatusResponse) ){
+        log.info("inside of the empty response from service in RestClientException ");
+        rmoStatusResponse = new RMOStatusResponse();
+        rmoStatusResponse.setStatusCode("failed");
+        rmoStatusResponse.setStatusMessage("failed");
+      }
+      //saveSaleNotificationInfo(saleNotificationRequest,notificationResponce);
+
+    }catch (Exception e){
+      log.info("saving status  data in catch block : "+ObjectUtils.isEmpty(rmoStatusResponse));
+      if(ObjectUtils.isEmpty(rmoStatusResponse) ){
+        log.info("inside of the empty responce from service");
+        rmoStatusResponse = new RMOStatusResponse();
+        rmoStatusResponse.setStatusCode("failed");
+        rmoStatusResponse.setStatusMessage("failed");
+      }
+  }
+      return rmoStatusResponse;
+    }
