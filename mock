@@ -1,0 +1,72 @@
+private void validatingInput(ValidateMOSaleInput validateinput) {
+        try {
+            boolean payAmount_nullcheck = validateinput.getOrder().getChecks().stream().anyMatch(a -> StringUtils.isEmpty(a.getPayAmount()));
+            log.info("[ValidateOrderServiceImpl] validatingInput check for Amount: " + payAmount_nullcheck);
+            if (!StringUtils.isEmpty(validateinput.getOrder().getAmount()) && !payAmount_nullcheck) {
+                log.info("[ValidateOrderServiceImpl] validatingInput amount check");
+                boolean amountStatus = validateinput.getOrder().getChecks().stream().anyMatch(a -> Double.parseDouble(a.getPayAmount()) < 0 || Double.parseDouble(a.getPayAmount()) > Double.parseDouble(validateinput.getOrder().getAmount()));
+                if (Double.parseDouble(validateinput.getOrder().getAmount()) < 0 || amountStatus) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("Amount").issue("Amount field").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name("Amount")
+                            .message("Amount Should not negetive or check amount greter than Total Amount")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
+
+                    throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+                }
+            } else {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Amount").issue("Amount field").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Amount")
+                        .message("Amount Should not Empty")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            if(validateinput.getOrder().getTotalChecks()!=validateinput.getOrder().getChecks().size()){
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Checks").issue("Total checks").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Checks")
+                        .message("Total checks should be equal with checks")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            log.info("Local date :"+LocalDate.now().toString() + " ,input :"+validateinput.getOrder().getChecks().get(0).getDate());
+            if(validateinput.getOrder().getChecks().stream().anyMatch(a -> !a.getDate().equalsIgnoreCase(LocalDate.now().toString()))){
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Date").issue("Date check").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Date")
+                        .message("Date Should be today")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+        } catch (NumberFormatException e) {
+            throw exceptionUtils.prepareWuException(WUError.builder().message("Input Error").build(),HttpStatus.BAD_REQUEST.value());
+        }
+    }
