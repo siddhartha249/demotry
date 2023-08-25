@@ -1,0 +1,285 @@
+public class ValidateOrderServiceImpl implements ValidateOrderService {
+   private final RMOConfigService configdata;
+
+    private final WUServiceExceptionUtils exceptionUtils;
+
+    private final MoneyOrderSaleRepo moneyOrderSaleRepo;
+
+    private final MoneyOrderRepo  moneyOrderRepo;
+
+    @Autowired
+    private RMOStatusServiceImpl rmoStatusService;
+	
+@Override	
+public ValidateMOSaleResponse validateMoneyOrder(ValidateMOSaleInput validateinput) {
+        RMOConfigResponce configinfo = configdata.getRmoConfigDetails();
+        //Check if negetive amounts
+        validatingInput(validateinput);
+        //Checking if MO enabled for operater
+        if (configinfo.isDeactivated()) {
+            log.info("ValidateOrderServiceImpl validateMoneyOrder() checking config ");
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("deactivated").issue("MO is deactivated").build();
+            wuErrorDetails.add(errorDetails);
+            com.wu.onep.library.exception.errorresponse.WUError wuError = WUError.builder()
+                    .name("MO is deactivated")
+                    .message("MO is deactivated for operater")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+        //Checking if compliance data is avilable
+        //if compliance log enabled and Totalamount is more than or equals 3000 USD
+        if (configinfo.isComplianceLogEnabled() &&(Integer.valueOf(validateinput.getOrder().getAmount())>=3000) && StringUtils.isEmpty(validateinput.getOrder().getPurchaser().getId())) {
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("isComplianceLogEnabled").issue("ID details Not found").build();
+            wuErrorDetails.add(errorDetails);
+            WUError wuError = WUError.builder()
+                    .name("id Details")
+                    .message("Id details not found")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+        //Checking session order limit
+        double TotalAmount =Double.parseDouble(validateinput.getOrder().getAmount());
+        if(Double.compare(TotalAmount,configinfo.getSessionMoneyOrderLimit()) >0){
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("SessionOrderLimit").issue("checking").build();
+            wuErrorDetails.add(errorDetails);
+            WUError wuError = WUError.builder()
+                    .name(" Session doller Limit")
+                    .message("greter Than session doller Limit")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+
+        }
+        //Checking daily doller Limit
+        String currentDate = LocalDate.now().toString();
+        if(!StringUtils.isEmpty(validateinput.getOrder().getTerminalId())) {
+            List<MoneyOrder> moneydata = moneyOrderRepo.findByTerminalIdAndMoDate(validateinput.getOrder().getTerminalId(),currentDate);
+            if(!moneydata.isEmpty()) {
+                log.info("validateMoneyOrder money order data: " + moneydata.get(0).toString());
+                double sumOfMOdone = moneydata.stream().mapToDouble(MoneyOrder::getTotalAmount).sum();
+                double currentSum = Double.sum(sumOfMOdone, Double.parseDouble(validateinput.getOrder().getAmount()));
+                if (Double.compare(currentSum, configinfo.getDialyDollerLimit()) > 0) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("DailyDollerLimit").issue("checking").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name(" daily doller Limit")
+                            .message("greter Than daily doller Limit")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
+
+                    throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+                }
+            }
+        }else{
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("Terminal ID").issue("Terminal ID Empty").build();
+            wuErrorDetails.add(errorDetails);
+            WUError wuError = WUError.builder()
+                    .name(" Terminal ID")
+                    .message("Terminal ID is Empty")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+
+        //Open Time check
+        if(!StringUtils.isEmpty(validateinput.getOrder().getChecks().get(0).getTime()) && configinfo.isVendorsIgnoreSecurityTimer()) {
+            String[] openTimeArray = validateinput.getOrder().getChecks().get(0).getTime().split(":");
+            String moTime = openTimeArray[0] + openTimeArray[1];
+           // String currentTime = new StringBuilder().append(LocalTime.now().getHour()).append(LocalTime.now().getMinute()).toString();
+            if (new BigInteger(configinfo.getOpenTime()).compareTo(new BigInteger(moTime)) > 0) {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("OpenTime").issue("Time checking").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Store Open Time check")
+                        .message("MO is intiated before store open")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            //Close Time check
+            if (new BigInteger(configinfo.getCloseTime()).compareTo(new BigInteger(moTime)) < 0) {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("CloseTime").issue("Time checking").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Store close Time check")
+                        .message("MO is intiated after store close")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+        }
+        String orderID = UUID.randomUUID().toString();
+        ValidateMOSaleResponse validateResponce = ValidateMOSaleResponse.builder().orderId(orderID).build();
+        saveMoneyOrderInfo(validateinput,orderID);
+        return validateResponce;
+    }
+
+    private void validatingInput(ValidateMOSaleInput validateinput) {
+        try {
+            boolean payAmount_nullcheck = validateinput.getOrder().getChecks().stream().anyMatch(a -> StringUtils.isEmpty(a.getPayAmount()));
+            log.info("[ValidateOrderServiceImpl] validatingInput check for Amount: " + payAmount_nullcheck);
+            if (!StringUtils.isEmpty(validateinput.getOrder().getAmount()) && !payAmount_nullcheck) {
+                log.info("[ValidateOrderServiceImpl] validatingInput amount check");
+                boolean amountStatus = validateinput.getOrder().getChecks().stream().anyMatch(a -> Double.parseDouble(a.getPayAmount()) < 0 || Double.parseDouble(a.getPayAmount()) > Double.parseDouble(validateinput.getOrder().getAmount()));
+                if (Double.parseDouble(validateinput.getOrder().getAmount()) < 0 || amountStatus) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("Amount").issue("Amount field").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name("Amount")
+                            .message("Amount Should not negetive or check amount greter than Total Amount")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
+
+                    throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+                }
+            } else {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Amount").issue("Amount field").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Amount")
+                        .message("Amount Should not Empty")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            if(validateinput.getOrder().getTotalChecks()!=validateinput.getOrder().getChecks().size()){
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Checks").issue("Total checks").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Checks")
+                        .message("Total checks should be equal with checks")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            log.info("Local date :"+LocalDate.now().toString() + " ,input :"+validateinput.getOrder().getChecks().get(0).getDate());
+            if(validateinput.getOrder().getChecks().stream().anyMatch(a -> !a.getDate().equalsIgnoreCase(LocalDate.now().toString()))){
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Date").issue("Date check").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Date")
+                        .message("Date Should be today")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+        } catch (NumberFormatException e) {
+            throw exceptionUtils.prepareWuException(WUError.builder().message("Input Error").build(),HttpStatus.BAD_REQUEST.value());
+        }
+    }
+
+      /* @Override
+    public String getValidateData(ValidateMOSaleInput validateinput) {
+        List<MoneyOrder> moneydata = moneyOrderRepo.findByTerminalIdAndMoDate("AB123", "2023-07-27");
+        log.info("The money order data is ::::::::"+moneydata.get(0).toString());
+        double sum = moneydata.stream().mapToDouble(o -> o.getTotalAmount()).sum();
+        log.info("The sum is :::::::::::::::::"+sum);
+        return "Success";
+    }*/
+
+
+    private void saveMoneyOrderInfo(ValidateMOSaleInput validateinput, String orderID) {
+        MoneyOrder moneyOrderinfo =new MoneyOrder();
+        try{
+            moneyOrderinfo.setOrderId(orderID);
+            if(null != validateinput.getOrder()){
+
+                if(null != validateinput.getOrder().getAccountId()) {
+                    moneyOrderinfo.setAccountId(validateinput.getOrder().getAccountId());
+                }
+                if(null != validateinput.getOrder().getOperaterId()) {
+                    moneyOrderinfo.setOperaterId(validateinput.getOrder().getOperaterId());
+                }
+                moneyOrderinfo.setMoType(validateinput.getOrder().getType().toString());
+                if(null != validateinput.getOrder().getPurchaser() &&
+                           null != validateinput.getOrder().getPurchaser().getId()) {
+                    moneyOrderinfo.setCustomerId(validateinput.getOrder().getPurchaser().getId());
+                }
+
+                if(null != validateinput.getOrder().getTerminalId()) {
+                moneyOrderinfo.setTerminalId(validateinput.getOrder().getTerminalId());
+                }
+                moneyOrderinfo.setTotalAmount(Double.parseDouble(validateinput.getOrder().getAmount()));
+                moneyOrderinfo.setTotalChecks(validateinput.getOrder().getTotalChecks());
+                moneyOrderinfo.setMoDate(LocalDate.now().toString());
+                moneyOrderinfo.setCreatedDate(LocalDateTime.now());
+                moneyOrderRepo.save(moneyOrderinfo);
+            }
+
+        } catch (WUServiceException e) {
+            log.error("[ValidateOrderServiceImpl][saveMoneyOrderInfo] Exception: Exception:{}.", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.info("[ValidateOrderServiceImpl][saveMoneyOrderInfo] from the exception block ");
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("input Value").issue("wrong").build();
+            wuErrorDetails.add(errorDetails);
+            com.wu.onep.library.exception.errorresponse.WUError wuError = WUError.builder()
+                    .name("Exception in saving money order info")
+                    .message(e.getMessage())
+                    .errorCode("ABCD123")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+
+
+    }
