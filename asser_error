@@ -1,0 +1,12 @@
+if (Double.parseDouble(validateinput.getOrder().getAmount()) < 0 || amountStatus) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("Amount").issue("Amount field").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name("Amount")
+                            .message("Amount Should not negetive or check amount greter than Total Amount")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
