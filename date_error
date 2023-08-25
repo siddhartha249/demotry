@@ -1,0 +1,15 @@
+if(validateinput.getOrder().getChecks().stream().anyMatch(a -> !a.getDate().equalsIgnoreCase(LocalDate.now().toString()))){
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Date").issue("Date check").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Date")
+                        .message("Date Should be today")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
