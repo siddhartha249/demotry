@@ -1,0 +1,47 @@
+ private void saveMoneyOrderInfo(ValidateMOSaleInput validateinput, String orderID) {
+        MoneyOrder moneyOrderinfo =new MoneyOrder();
+        try{
+            moneyOrderinfo.setOrderId(orderID);
+            if(null != validateinput.getOrder()){
+
+                if(null != validateinput.getOrder().getAccountId()) {
+                    moneyOrderinfo.setAccountId(validateinput.getOrder().getAccountId());
+                }
+                if(null != validateinput.getOrder().getOperaterId()) {
+                    moneyOrderinfo.setOperaterId(validateinput.getOrder().getOperaterId());
+                }
+                moneyOrderinfo.setMoType(validateinput.getOrder().getType().toString());
+                if(null != validateinput.getOrder().getPurchaser() &&
+                           null != validateinput.getOrder().getPurchaser().getId()) {
+                    moneyOrderinfo.setCustomerId(validateinput.getOrder().getPurchaser().getId());
+                }
+
+                if(null != validateinput.getOrder().getTerminalId()) {
+                moneyOrderinfo.setTerminalId(validateinput.getOrder().getTerminalId());
+                }
+                moneyOrderinfo.setTotalAmount(Double.parseDouble(validateinput.getOrder().getAmount()));
+                moneyOrderinfo.setTotalChecks(validateinput.getOrder().getTotalChecks());
+                moneyOrderinfo.setMoDate(LocalDate.now().toString());
+                moneyOrderinfo.setCreatedDate(LocalDateTime.now());
+                moneyOrderRepo.save(moneyOrderinfo);
+            }
+
+        } catch (WUServiceException e) {
+            log.error("[ValidateOrderServiceImpl][saveMoneyOrderInfo] Exception: Exception:{}.", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.info("[ValidateOrderServiceImpl][saveMoneyOrderInfo] from the exception block ");
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("input Value").issue("wrong").build();
+            wuErrorDetails.add(errorDetails);
+            com.wu.onep.library.exception.errorresponse.WUError wuError = WUError.builder()
+                    .name("Exception in saving money order info")
+                    .message(e.getMessage())
+                    .errorCode("ABCD123")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
