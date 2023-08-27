@@ -1,0 +1,91 @@
+
+
+public class RmoServiceImpl implements RmoService {
+
+  /*  @Autowired
+    AgentOrderRepository agentOrderRepository;*/
+
+    @Autowired
+    private WUServiceExceptionUtils exceptionUtils;
+
+    @Autowired
+    OrderValidatorUtil orderValidatorUtil;
+
+    @Autowired
+     MoneyOrderSaleRepo moneyOrderSaleRepo;
+    @Autowired
+    MoneyOrderRepo moneyOrderRepo;
+
+    @Autowired
+    MoSaleNotificationRepo moNotificationRepo;
+    @Autowired
+    PingTokeGenerationImpl pingTokenService;
+
+
+
+
+
+ public SubmitOrderResponse submitOrder(SubmitOrderRequest submitOrderRequest) throws OrderException, WUServiceException {
+        String moStatus =null;
+        try {
+
+            orderValidatorUtil.validateSubmitOrderRequest(submitOrderRequest);
+
+          /*  SubmitOrder submitOrder = new SubmitOrder();
+            SubmitOrderPK submitOrderPK = new SubmitOrderPK(submitOrderRequest.getOrderId(), submitOrderRequest.getChecks().getSerialNumber());
+
+            submitOrder.setKey(submitOrderPK);
+            submitOrder.setAmount(Double.parseDouble(submitOrderRequest.getChecks().getAmount()));
+            submitOrder.setStatus(CommonConstants.SUBMIT_ORDER_RESPONSE_SUCCESS);
+
+            submitOrderRepository.save(submitOrder);
+*/
+            Optional<MoneyOrder> orderDetails = moneyOrderRepo.findByOrderId(submitOrderRequest.getOrderId());
+            if(orderDetails.isPresent()){
+                //SaleNotificationResponce coreSaleAPIResponce = callSaleNotificationAPi(submitOrderRequest);
+                log.info("[RmoServiceImpl] submitOrder order details from rmo money order: "+orderDetails.get().toString());
+                 moStatus = saveMoCheckinfo(submitOrderRequest,orderDetails.get());
+
+            }else{
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("Order ID").issue("Order ID Not found").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Order ID")
+                        .message("Order ID not found")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+
+
+        } catch (WUServiceException e) {
+            log.error("[RmoServiceImpl][submitOrder] Exception: Exception:{}.", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error(ErrorConstants.ERROR_BAD_REQUEST);
+
+            if (e.getMessage().equals(ErrorConstants.ERROR_CODE_BAD_REQUEST)) {
+
+                WUError wuError = WUError.builder()
+                        .name(ErrorConstants.VALIDATION_ERROR)
+                        .message(ErrorConstants.ERROR_MSG_BAD_REQUEST)
+                        .errorCode(ErrorConstants.ERROR_CODE_BAD_REQUEST)
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            } else {
+
+                throw exceptionUtils.prepareWuException(
+                        ErrorConstants.ERROR_CODE_INTERNAL_SERVER_ERROR, e, WUExceptionType.SERVER);
+            }
+        }
+        return SubmitOrderResponse.builder()
+                .status(moStatus)
+                .build();
+    }
