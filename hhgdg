@@ -1,0 +1,105 @@
+public class ValidateOrderServiceImpl implements ValidateOrderService {
+   private final RMOConfigService configdata;
+
+    private final WUServiceExceptionUtils exceptionUtils;
+
+    private final MoneyOrderSaleRepo moneyOrderSaleRepo;
+
+    private final MoneyOrderRepo  moneyOrderRepo;
+
+    @Autowired
+    private RMOStatusServiceImpl rmoStatusService;
+
+    @Autowired
+    public ValidateOrderServiceImpl(RMOConfigService configdata, WUServiceExceptionUtils exceptionUtils, MoneyOrderSaleRepo moneyOrderSaleRepo, MoneyOrderRepo moneyOrderRepo, RMOStatusServiceImpl rmoStatusService) {
+        this.configdata = configdata;
+        this.exceptionUtils = exceptionUtils;
+        this.moneyOrderSaleRepo =moneyOrderSaleRepo;
+        this.moneyOrderRepo = moneyOrderRepo;
+    }
+	
+	public ValidateMOSaleResponse validateMoneyOrder(ValidateMOSaleInput validateinput) {
+        RMOConfigResponce configinfo = configdata.getRmoConfigDetails();
+        
+        //Checking daily doller Limit
+        String currentDate = LocalDate.now().toString();
+        if(!StringUtils.isEmpty(validateinput.getOrder().getTerminalId())) {
+            List<MoneyOrder> moneydata = moneyOrderRepo.findByTerminalIdAndMoDate(validateinput.getOrder().getTerminalId(),currentDate);
+            if(!moneydata.isEmpty()) {
+                log.info("validateMoneyOrder money order data: " + moneydata.get(0).toString());
+                double sumOfMOdone = moneydata.stream().mapToDouble(MoneyOrder::getTotalAmount).sum();
+                double currentSum = Double.sum(sumOfMOdone, Double.parseDouble(validateinput.getOrder().getAmount()));
+                if (Double.compare(currentSum, configinfo.getDialyDollerLimit()) > 0) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("DailyDollerLimit").issue("checking").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name(" daily doller Limit")
+                            .message("greter Than daily doller Limit")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
+
+                    throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+                }
+            }
+        }else{
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("Terminal ID").issue("Terminal ID Empty").build();
+            wuErrorDetails.add(errorDetails);
+            WUError wuError = WUError.builder()
+                    .name(" Terminal ID")
+                    .message("Terminal ID is Empty")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+
+        //Open Time check
+        if(!StringUtils.isEmpty(validateinput.getOrder().getChecks().get(0).getTime()) && configinfo.isVendorsIgnoreSecurityTimer()) {
+            String[] openTimeArray = validateinput.getOrder().getChecks().get(0).getTime().split(":");
+            String moTime = openTimeArray[0] + openTimeArray[1];
+           // String currentTime = new StringBuilder().append(LocalTime.now().getHour()).append(LocalTime.now().getMinute()).toString();
+            if (new BigInteger(configinfo.getOpenTime()).compareTo(new BigInteger(moTime)) > 0) {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("OpenTime").issue("Time checking").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Store Open Time check")
+                        .message("MO is intiated before store open")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+            //Close Time check
+            if (new BigInteger(configinfo.getCloseTime()).compareTo(new BigInteger(moTime)) < 0) {
+                List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                WUErrorDetails errorDetails = WUErrorDetails.builder().field("CloseTime").issue("Time checking").build();
+                wuErrorDetails.add(errorDetails);
+                WUError wuError = WUError.builder()
+                        .name("Store close Time check")
+                        .message("MO is intiated after store close")
+                        .errorCode("AEF004251")
+                        .priority(ErrorConstants.PRIORITY_1)
+                        .legacyError("")
+                        .issues(wuErrorDetails)
+                        .build();
+
+                throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+            }
+        }
+        String orderID = UUID.randomUUID().toString();
+        ValidateMOSaleResponse validateResponce = ValidateMOSaleResponse.builder().orderId(orderID).build();
+        saveMoneyOrderInfo(validateinput,orderID);
+        return validateResponce;
+    }
