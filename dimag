@@ -1,0 +1,38 @@
+String currentDate = LocalDate.now().toString();
+        if(!StringUtils.isEmpty(validateinput.getOrder().getTerminalId())) {
+            List<MoneyOrder> moneydata = moneyOrderRepo.findByTerminalIdAndMoDate(validateinput.getOrder().getTerminalId(),currentDate);
+            if(!moneydata.isEmpty()) {
+                log.info("validateMoneyOrder money order data: " + moneydata.get(0).toString());
+                double sumOfMOdone = moneydata.stream().mapToDouble(MoneyOrder::getTotalAmount).sum();
+                double currentSum = Double.sum(sumOfMOdone, Double.parseDouble(validateinput.getOrder().getAmount()));
+                if (Double.compare(currentSum, configinfo.getDialyDollerLimit()) > 0) {
+                    List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+                    WUErrorDetails errorDetails = WUErrorDetails.builder().field("DailyDollerLimit").issue("checking").build();
+                    wuErrorDetails.add(errorDetails);
+                    WUError wuError = WUError.builder()
+                            .name(" daily doller Limit")
+                            .message("greter Than daily doller Limit")
+                            .errorCode("AEF004251")
+                            .priority(ErrorConstants.PRIORITY_1)
+                            .legacyError("")
+                            .issues(wuErrorDetails)
+                            .build();
+
+                    throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+                }
+            }
+        }else{
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("Terminal ID").issue("Terminal ID Empty").build();
+            wuErrorDetails.add(errorDetails);
+            WUError wuError = WUError.builder()
+                    .name(" Terminal ID")
+                    .message("Terminal ID is Empty")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
