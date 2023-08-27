@@ -1,0 +1,41 @@
+public ValidateMOSaleResponse validateMoneyOrder(ValidateMOSaleInput validateinput) {
+        RMOConfigResponce configinfo = configdata.getRmoConfigDetails();
+        //Check if negetive amounts
+        validatingInput(validateinput);
+        //Checking if MO enabled for operater
+        if (configinfo.isDeactivated()) {
+            log.info("ValidateOrderServiceImpl validateMoneyOrder() checking config ");
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("deactivated").issue("MO is deactivated").build();
+            wuErrorDetails.add(errorDetails);
+            com.wu.onep.library.exception.errorresponse.WUError wuError = WUError.builder()
+                    .name("MO is deactivated")
+                    .message("MO is deactivated for operater")
+                    .errorCode("AEF004251")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
+RMOConfigService configdata=mock(RMOConfigService.class);
+        RMOConfigResponce mockConfigResponse = mock(RMOConfigResponce.class)  ;
+        ValidateMOSaleInput mockInput = mock(ValidateMOSaleInput.class); /* Initialize the object as needed */;
+
+//
+
+        when(configdata.getRmoConfigDetails()).thenReturn(mockConfigResponse);
+        when(mockConfigResponse.isDeactivated()).thenReturn(true);
+
+
+// Mocking the prepareWuException method
+        when(exceptionUtils.prepareWuException(any(), anyInt())).thenAnswer(invocation -> {
+            throw new RuntimeException("Mocked exception");
+        });
+
+//
+        ValidateOrderServiceImpl validateOrderService = new ValidateOrderServiceImpl(
+                configdata, exceptionUtils, moneyOrderSaleRepo, moneyOrderRepo,rmoStatusService);
+
+        assertThrows(RuntimeException.class, () -> validateOrderService.validateMoneyOrder(mockInput));
