@@ -1,0 +1,69 @@
+ public class RmoServiceImpl implements RmoService {
+
+  /*  @Autowired
+    AgentOrderRepository agentOrderRepository;*/
+
+    @Autowired
+    private WUServiceExceptionUtils exceptionUtils;
+
+    @Autowired
+    OrderValidatorUtil orderValidatorUtil;
+
+    @Autowired
+     MoneyOrderSaleRepo moneyOrderSaleRepo;
+    @Autowired
+    MoneyOrderRepo moneyOrderRepo;
+
+    @Autowired
+    MoSaleNotificationRepo moNotificationRepo;
+    @Autowired
+    PingTokeGenerationImpl pingTokenService;
+	
+	
+
+ public String saveMoCheckinfo(SubmitOrderRequest submitOrderRequest,MoneyOrder orderDetails) {
+        try{
+            String pingAccessToken = pingTokenService.getPingAccessToken("post:pro.rmo.saleNotification").getAccessToken();
+            //need to remove
+            double sumofAmounts = submitOrderRequest.getChecks().stream().mapToDouble(o -> Double.parseDouble(o.getPayAmount())).sum();
+            log.info("[RmoServiceImpl] saveMoCheckinfo getting sum of amount :"+sumofAmounts);
+            for (Check check : submitOrderRequest.getChecks()) {
+                callSaleNotificationAPi(orderDetails,check,pingAccessToken);
+                MoneyOrderSale moSale = new MoneyOrderSale();
+                MoneyOrderSalePK moneyOrderKey = new MoneyOrderSalePK(submitOrderRequest.getOrderId(), check.getNumberOfCheck());
+                moSale.setKey(moneyOrderKey);
+                moSale.setAccountId("AB123");
+                moSale.setTerminalId("T0001");
+                moSale.setOperaterId("OP987");
+                moSale.setTotalChecks(submitOrderRequest.getTotalChecks());
+                moSale.setMoType("MO");
+                moSale.setAmount(sumofAmounts);
+                moSale.setDate(check.getDate());
+                moSale.setSerialNumber(check.getSerialNumber());
+                moSale.setPayTo(check.getPayTo());
+                moSale.setCheckFee(Double.parseDouble(check.getFee()));
+                moSale.setPayAmount(Double.parseDouble(check.getPayAmount()));
+                moSale.setTime(check.getTime());
+                moSale.setVoidComment(check.getVoidComment());
+                moSale.setCreatedDate(LocalDateTime.now());
+                moneyOrderSaleRepo.save(moSale);
+            }
+        } catch (WUServiceException e) {
+            log.error("[RmoServiceImpl][saveMoCheckinfo] Exception: Exception:{}.", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.info("inside of the exception block ");
+            List<WUErrorDetails> wuErrorDetails = new ArrayList<>();
+            WUErrorDetails errorDetails = WUErrorDetails.builder().field("input Value").issue("wrong").build();
+            wuErrorDetails.add(errorDetails);
+            com.wu.onep.library.exception.errorresponse.WUError wuError = WUError.builder()
+                    .name("Exception in saving mony order sale")
+                    .message(e.getMessage())
+                    .errorCode("ABCD123")
+                    .priority(ErrorConstants.PRIORITY_1)
+                    .legacyError("")
+                    .issues(wuErrorDetails)
+                    .build();
+
+            throw exceptionUtils.prepareWuException(wuError, HttpStatus.BAD_REQUEST.value());
+        }
