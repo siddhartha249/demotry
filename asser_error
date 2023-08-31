@@ -10,3 +10,5 @@ if (Double.parseDouble(validateinput.getOrder().getAmount()) < 0 || amountStatus
                             .legacyError("")
                             .issues(wuErrorDetails)
                             .build();
+@Value("${wu.rmo.status.URL:https://api-dev.rmo.cmt.us.cloud.wuintranet.net/rmocorsv/dev}")
+  private String CORE_API_URL;
