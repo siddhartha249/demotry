@@ -1,0 +1,115 @@
+ public class RMOStatusServiceImpl implements RMOStatusService {
+
+  @Autowired
+  PingUtil pingUtil;
+
+  @Autowired
+  private WUServiceExceptionUtils exceptionUtils;
+
+  @Autowired
+  @Qualifier("defaultRestTemplate")
+  private RestTemplate defaultRestTemplate;
+
+  @Value("${rmo.ping.username}")
+  private String CLIENT_ID;
+
+  @Value("${rmo.ping.credentials}")
+  private String CLIENT_SECRET;
+
+  @Value("${rmo.scope.core.saleStatus}")
+  private String SCOPE;
+
+  @Value("${rmo.ping.federate.url}")
+  private String PING_URL;
+
+  @Value("${wu.sale.coreApi.apiKey}")
+  private String statusAPIKey;
+
+  @Value("${wu.sale.coreApi.host}")
+  private String statusHost;
+
+//  @Value("${wu.rmo.status.URL:https://api-dev.rmo.cmt.us.cloud.wuintranet.net/rmocorsv/dev}")
+//  private String CORE_API_URL;
+
+  private String CORE_API_URL="https://api-dev.rmo.cmt.us.cloud.wuintranet.net/rmocorsv/dev";
+
+  @Autowired
+  private JWTUtility jwtUtil;
+
+ 
+ 
+ @Override
+  public SubmitMoEncashmentResponse submitMOEncashment(StatusRequest request, String authToken) throws BadRequestException, HttpServerErrorException {
+    //Generate token for getting the status
+    String token = pingUtil.getJWTBearerTokenUsingClientCredentialFlow(CLIENT_ID,CLIENT_SECRET,"post:pro.rmo.authorization",PING_URL);
+
+    //get Agent details
+    AgentDetails agentDetails = jwtUtil.getAgentDetailsFromToken(authToken);
+    //call to RMO Core service APIs
+    RMOStatusRequest apiRequest = new RMOStatusRequest();
+    SubmitMoEncashmentResponse response =null;
+    ResponseEntity<AuthorizationResponse> authorizationResponse = null;
+    try {
+
+      HttpHeaders reqHeadersSale = new HttpHeaders();
+      reqHeadersSale.setContentType(MediaType.APPLICATION_JSON);
+      reqHeadersSale.add(PING_API_KEY, statusAPIKey);
+      reqHeadersSale.add(EXTERNAL_REF_ID, "63463453");
+      reqHeadersSale.add(SERVICE_ID, "rmocorsv");
+      reqHeadersSale.add(HOST, statusHost);
+      reqHeadersSale.add(AUTHORIZATION,"Bearer "+token);
+
+      apiRequest = RMOStatusRequest.builder()
+              .rmoTerminalId(agentDetails.getTerminalId()) //to be fetched from jwt
+              .moNumber(request.getSerialNumber())
+              .moAmount(request.getAmount())
+              .moSaleTerminalId(StringUtils.isNotBlank(request.getSaleTerminalId()) ? request.getSaleTerminalId(): agentDetails.getTerminalId())
+              .operatorId(agentDetails.getOperatorId()).build();//to be fetched from jwt
+
+      ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+      String json = ow.writeValueAsString(apiRequest);
+      log.info("The headers in status api::::::::::::::::::::"+reqHeadersSale);
+      log.info("The request json object in status ::::::   " + json);
+
+      String url = new StringBuilder(CORE_API_URL).append(CommonConstants.AUTHORIZATION_URL).toString();
+
+      HttpEntity<Object> httpRequest = new HttpEntity<>(apiRequest, reqHeadersSale);
+      authorizationResponse = defaultRestTemplate.exchange(url, HttpMethod.POST, httpRequest, AuthorizationResponse.class);
+      // notificationResponce=saleRestTemplate.postForObject(CommonConstants.Sale_Notification_URL,request,SaleNotificationResponce.class);
+      if (authorizationResponse.getStatusCode().is2xxSuccessful()) {
+        response = new SubmitMoEncashmentResponse();
+        log.info("[RmoServiceImpl] callSaleNotificationAPi Success Responce API ");
+        AuthorizationResponse res = authorizationResponse.getBody();
+        response.setSerialNumber(res.getMoNumber());
+        response.setStatusCode(res.getStatusCode());
+        response.setStatusMessage(res.getStatusMessage());
+        response.setAuthorizationNumber(res.getAuthorizationNumber());
+
+      }else{
+        log.info("The response from rest API is  ::::::"+authorizationResponse.getBody());
+        log.info("The response status is  ::::"+authorizationResponse.getStatusCode().toString());
+      }
+      return  response;
+    }
+    catch (RestClientException e) {
+      log.error("[RmoServiceImpl] [Status] exception response {}",e.getMessage());
+      log.info("The actual cause for the error is :"+e.getRootCause());
+      if(ObjectUtils.isEmpty(authorizationResponse) ){
+        log.info("inside of the empty response from service in RestClientException ");
+        response = new SubmitMoEncashmentResponse();
+        response.setStatusCode("failed");
+        response.setStatusMessage("failed");
+      }
+      //saveSaleNotificationInfo(saleNotificationRequest,notificationResponce);
+
+    }catch (Exception e){
+      log.info("saving status  data in catch block : "+ObjectUtils.isEmpty(response));
+      if(ObjectUtils.isEmpty(response) ){
+        log.info("inside of the empty response from service");
+        response = new SubmitMoEncashmentResponse();
+        response.setStatusCode("failed");
+        response.setStatusMessage("failed");
+      }
+    }
+    return response;
+  }
