@@ -1,0 +1,160 @@
+ private List<PrintActivityResponse> getPrintActivityinfo(MOActivityRequest moActivityRequest, String authorization) {
+        List<PrintActivityResponse> pringActivitylist = new ArrayList<>();
+        AgentAccessDetails agentDetails = null;
+        try {
+            agentDetails = rmoUtil.getAgentDetailsAndAgentAccessDetails(authorization);
+        } catch (ParseException e) {
+            // throw new RuntimeException(e);
+            log.error("ParseException while calling agentDetails API in print Activity : {}",e.getMessage());
+        } catch (Exception e){
+            log.error("Exception while calling agentDetails API in print Activity: {}",e.getMessage());
+        }
+
+        StringBuffer querystr =null;
+        String fromDate = StringUtils.stripStart(moActivityRequest.getDateRangeFrom(), null);
+        String[] fromDateArray = fromDate.split(" ");
+        String todate = StringUtils.stripStart(moActivityRequest.getDateRangeTo(), null);
+        String[] todateArray = todate.split(" ");
+        if(fromDateArray.length >1 &&todateArray.length>1){
+            log.info("[getPrintActivityinfo] sprlit of the string values : "+fromDateArray[0] +" time value"+fromDateArray[1]);
+
+            querystr = new StringBuffer();
+            querystr.append("select action_type ,operator_id ,activity_date ,activity_time ,terminal_id  from agent_order_services.print_activity where activity_date >=");
+            querystr.append("'"+fromDateArray[0]+"'");
+            querystr.append(" and activity_date <=");
+            querystr.append("'"+todateArray[0]+"'");
+//            querystr.append("and created_timestamp >=");
+//            querystr.append("'"+Timestamp.valueOf(fromDate)+"+"+timeZoneValue+"'");
+//            querystr.append(" and created_timestamp <=");
+//            querystr.append("'"+Timestamp.valueOf(todate)+"+"+timeZoneValue+"'");
+            querystr.append(" and terminal_id =");
+            querystr.append("'"+agentDetails.getAgentDetails().getTerminalId()+"'");
+            querystr.append(" ALLOW FILTERING");
+
+        }else{
+            querystr = new StringBuffer();
+            querystr.append("select action_type ,operator_id ,activity_date ,activity_time ,terminal_id  from agent_order_services.print_activity where activity_date >=");
+            querystr.append("'"+fromDate+"'");
+            querystr.append(" and activity_date <=");
+            querystr.append("'"+todate+"'");
+            querystr.append(" and terminal_id =");
+            querystr.append("'"+agentDetails.getAgentDetails().getTerminalId()+"'");
+            querystr.append(" ALLOW FILTERING");
+        }
+
+        log.info("[MoActivityServiceImpl] getPrintActivityinfo the query Str :"+querystr.toString());
+        List<PrinterActivity> printDatalist = new ArrayList<>();
+        List<PrinterActivity> printdata = cqlTemplate.query(querystr.toString(), new ResultSetExtractor<List<PrinterActivity>>() {
+            @Override
+            public List<PrinterActivity> extractData(ResultSet resultSet) throws DriverException, DataAccessException {
+                Iterator<Row> dataIterater = resultSet.iterator();
+                while (dataIterater.hasNext()){
+                    Row printActivityinfo = dataIterater.next();
+                    PrinterActivity printAct =new PrinterActivity();
+                    printAct.setPrinterAction(PrinterActions.valueOf(printActivityinfo.getString(0)));
+                    printAct.setOperatorId(printActivityinfo.getString(1));
+                    printAct.setDate(printActivityinfo.getString(2));
+                    printAct.setTime(printActivityinfo.getString(3));
+                    printAct.setTerminalId(printActivityinfo.getString(4));
+                    printDatalist.add(printAct);
+                }
+                return printDatalist;
+            }
+        });
+        printDatalist.forEach(printAct ->{
+            PrintActivityResponse printActResponce = new PrintActivityResponse().builder()
+                    .type("PRINTER_LOGS")
+                    .action(printAct.getPrinterAction().toString())
+                    .operatorId(printAct.getOperatorId())
+                    .date(printAct.getDate())
+                    .time(printAct.getTime())
+                    .build();
+            pringActivitylist.add(printActResponce);
+        });
+        return pringActivitylist;
+    }
+	
+	
+	
+	
+	 private List<RmoActivity> getRmoActivityinfoDB(MOActivityRequest moActivityRequest, String authorization) {
+        AgentAccessDetails agentDetails = null;
+        try {
+            agentDetails = rmoUtil.getAgentDetailsAndAgentAccessDetails(authorization);
+        } catch (ParseException e) {
+            // throw new RuntimeException(e);
+            log.error("ParseException while calling agentDetails API : {}",e.getMessage());
+        } catch (Exception e){
+            log.error("Exception while calling agentDetails API : {}",e.getMessage());
+        }
+        List<RmoActivity> rmoActivityinfo = new ArrayList<>();
+        StringBuffer querystr =null;
+        String fromDate = StringUtils.stripStart(moActivityRequest.getDateRangeFrom(), null);
+        String[] fromDateArray = fromDate.split(" ");
+        String todate = StringUtils.stripStart(moActivityRequest.getDateRangeTo(), null);
+        String[] todateArray = todate.split(" ");
+        if(fromDateArray.length >1 &&todateArray.length>1){
+            log.info("[getRmoActivityinfoDB] sprlit of the string values : "+fromDateArray[0] +" time value"+fromDateArray[1]);
+
+            querystr = new StringBuffer();
+            querystr.append("select order_id ,mo_type ,operator_id ,created_date ,amount ,blobAsText(check_data) as checkData,blobAsText(customer_data) as customerData,status ,updated_date,mo_serialnumber,mo_date ,mo_time,numberof_check   from agent_order_services.rmo_activity_v1 where mo_date >=");
+            querystr.append("'"+fromDateArray[0]+"'");
+            querystr.append(" and  mo_date <=");
+            querystr.append("'"+todateArray[0]+"'");
+            querystr.append(" and created_date >=");
+            querystr.append("'"+ Timestamp.valueOf(fromDate)+"+"+timeZoneValue+"'");
+            querystr.append(" and  created_date <=");
+            querystr.append("'"+Timestamp.valueOf(todate)+"+"+timeZoneValue+"'");
+            //querystr.append(" and mo_type =");
+           // querystr.append("'"+moActivityRequest.getActivityType()+"'");
+            querystr.append(" and terminal_id=");
+            querystr.append("'"+agentDetails.getAgentDetails().getTerminalId()+"'");
+            querystr.append(" ALLOW FILTERING");
+
+        }else{
+            querystr = new StringBuffer();
+            querystr.append("select order_id ,mo_type ,operator_id ,created_date ,amount ,blobAsText(check_data) as checkData,blobAsText(customer_data) as customerData,status ,updated_date,mo_serialnumber,mo_date ,mo_time,numberof_check   from agent_order_services.rmo_activity_v1 where mo_date >=");
+            querystr.append("'"+moActivityRequest.getDateRangeFrom()+"'");
+            querystr.append(" and  mo_date <=");
+            querystr.append("'"+moActivityRequest.getDateRangeTo()+"'");
+            // querystr.append(" and mo_type =");
+            // querystr.append("'"+moActivityRequest.getActivityType()+"'");
+            querystr.append(" and terminal_id=");
+            querystr.append("'"+agentDetails.getAgentDetails().getTerminalId()+"'");
+            querystr.append(" ALLOW FILTERING");
+        }
+
+        log.info("[MoActivityServiceImpl] getRmoActivityinfoDB the query Str :"+querystr.toString());
+        List<RmoActivity> resultDB = cqlTemplate.query(querystr.toString(), new ResultSetExtractor<List<RmoActivity>>() {
+            @Override
+            public List<RmoActivity> extractData(ResultSet resultSet) throws DriverException, DataAccessException {
+                Iterator<Row> itrdata = resultSet.iterator();
+                while (itrdata.hasNext()){
+                    Row dataActivity = itrdata.next();
+                    log.info("Activity row data is 01  :"+dataActivity.getString(0));
+                    log.info("Activity row data is 02  :"+dataActivity.getString(1));
+                    log.info("Activity row data is 03  :"+dataActivity.getObject(3));
+                    log.info("Activity row data is 05  :"+dataActivity.getString(5));
+                    RmoActivityPk key =new RmoActivityPk("TR123",dataActivity.getString(9), dataActivity.getString(10), dataActivity.getString(11));
+                    RmoActivity rmoActivity = new RmoActivity().builder()
+                            .key(key)
+                            .orderId(dataActivity.getString(0))
+                            .moType(MoneyOrderType.valueOf(dataActivity.getString(1)))
+                            .operatorId(dataActivity.getString(2))
+                            .customerId(dataActivity.getObject(3).toString())
+                            .amount(dataActivity.getString(4))
+                            .checkData(dataActivity.getString(5))
+                            .customerData(dataActivity.getString(6))
+                            .status(dataActivity.getString(7))
+                            .updatedDate(Timestamp.from(dataActivity.getInstant(8)))
+                            .numberOfCheck(dataActivity.getInt(12))
+
+                            .build();
+                    rmoActivityinfo.add(rmoActivity);
+                }
+                log.info("The Activity data is : "+rmoActivityinfo);
+                return rmoActivityinfo;
+            }
+        });
+        return rmoActivityinfo;
+    }
